@@ -1,8 +1,9 @@
-import { Button, Drawer, Input, Segmented, Select, Space } from "antd";
+import { App, Button, Checkbox, Drawer, Input, Segmented, Select, Space } from "antd";
 import { ListPlus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { fetchChannelModels } from "@/services/api/image";
 import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
@@ -11,7 +12,9 @@ type ScriptTarget = { name: string; capability: ModelCapability; value: string }
 
 export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: boolean; channel: ModelChannel | null; onSave: (channel: ModelChannel) => void; onClose: () => void }) {
     const { t } = useTranslation();
+    const { message } = App.useApp();
     const [draft, setDraft] = useState<ModelChannel | null>(channel);
+    const [testingConnection, setTestingConnection] = useState(false);
     const [selectOpen, setSelectOpen] = useState(false);
     const [scriptTarget, setScriptTarget] = useState<ScriptTarget | null>(null);
     const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
@@ -44,8 +47,20 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
     const removeModel = (name: string) => setModels(draft.models.filter((model) => model.name !== name));
 
     const save = () => {
-        onSave({ ...draft, name: draft.name.trim() || t("config.channels.unnamed"), models: normalizeChannelModels(draft.models) });
+        onSave({ ...draft, apiKey: draft.apiKey.trim(), name: draft.name.trim() || t("config.channels.unnamed"), models: normalizeChannelModels(draft.models) });
         onClose();
+    };
+
+    const testConnection = async () => {
+        setTestingConnection(true);
+        try {
+            const models = await fetchChannelModels({ ...draft, apiKey: draft.apiKey.trim() });
+            message.success(t("config.modelSelect.fetched", { count: models.length }));
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : t("config.modelSelect.fetchFailed"));
+        } finally {
+            setTestingConnection(false);
+        }
     };
 
     return (
@@ -77,10 +92,23 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                     <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.baseUrl")}</span>
                     <Input value={draft.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} placeholder="https://api.example.com" />
                 </label>
-                <label className="block md:col-span-2">
-                    <span className="mb-1 block text-sm font-medium">API Key</span>
-                    <Input.Password value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder="sk-..." />
-                </label>
+                <div className="md:col-span-2">
+                    <label className="block">
+                        <span className="mb-1 block text-sm font-medium">API Key</span>
+                        <Input.Password autoComplete="off" value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder="sk-..." />
+                    </label>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <Checkbox checked={draft.rememberApiKey !== false} onChange={(event) => patch({ rememberApiKey: event.target.checked })}>
+                            {t("config.channelEditor.rememberApiKey")}
+                        </Checkbox>
+                        <Button size="small" loading={testingConnection} disabled={!draft.baseUrl.trim() || !draft.apiKey.trim()} onClick={() => void testConnection()}>
+                            {t("config.channelEditor.testConnection")}
+                        </Button>
+                        <Button size="small" disabled={!draft.apiKey} onClick={() => patch({ apiKey: "" })}>
+                            {t("config.channelEditor.clearApiKey")}
+                        </Button>
+                    </div>
+                </div>
             </div>
 
             <div className="mt-6 mb-3 flex flex-wrap items-center justify-between gap-2">

@@ -72,10 +72,6 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const imageResolutionOptions = mediaScaleOptions.map((value) => ({ value, label: value === "auto" ? t("settingsPanels.common.auto") : value.toUpperCase() }));
     useEffect(() => setActiveTab(initialTab), [initialTab]);
 
-    const saveConfig = (nextConfig: AiConfig) => {
-        (Object.keys(nextConfig) as Array<keyof AiConfig>).forEach((key) => updateConfig(key, nextConfig[key]));
-    };
-
     const finishConfig = () => {
         const ready = config.channels.some((channel) => channel.baseUrl.trim() && channel.apiKey.trim() && channel.models.length);
         setConfigDialogOpen(false);
@@ -95,7 +91,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         }
     };
 
-    const updateChannels = (channels: ModelChannel[]) => saveConfig(withChannels(config, channels));
+    const updateChannels = (channels: ModelChannel[]) => useConfigStore.setState(({ config: current }) => ({ config: withChannels(current, channels) }));
 
     const addChannel = () => {
         const channel = createModelChannel({ name: t("config.channels.numberedName", { count: config.channels.length + 1 }) });
@@ -395,7 +391,7 @@ function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
         channels,
         models: modelOptionsFromChannels(channels),
         baseUrl: channels[0]?.baseUrl || config.baseUrl,
-        apiKey: channels[0]?.apiKey || config.apiKey,
+        apiKey: channels[0]?.apiKey ?? config.apiKey,
         apiFormat: channels[0]?.apiFormat || config.apiFormat,
     };
     return {

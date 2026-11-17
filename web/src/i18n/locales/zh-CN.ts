@@ -520,6 +520,9 @@ export default {
             systemPromptPlaceholder: "例如：你是一位擅长电影感写实摄影的视觉导演。",
         },
         channelEditor: {
+            rememberApiKey: "在此浏览器记住 Key",
+            testConnection: "验证 Key",
+            clearApiKey: "清除 Key",
             title: "编辑渠道",
             name: "渠道名称",
             protocol: "协议",

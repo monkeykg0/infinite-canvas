@@ -520,6 +520,9 @@ export default {
             systemPromptPlaceholder: "For example: You are a visual director specializing in cinematic, photorealistic imagery.",
         },
         channelEditor: {
+            rememberApiKey: "Remember the key in this browser",
+            testConnection: "Verify key",
+            clearApiKey: "Clear key",
             title: "Edit provider",
             name: "Provider name",
             protocol: "Protocol",

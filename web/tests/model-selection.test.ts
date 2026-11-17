@@ -5,6 +5,7 @@ import type { CanvasNodeData } from "../src/types/canvas";
 // Config and i18n use browser storage during module initialization.
 const values = new Map<string, string>();
 const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
 Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
     value: {
@@ -13,12 +14,15 @@ Object.defineProperty(globalThis, "localStorage", {
         removeItem: (key: string) => values.delete(key),
     },
 });
+Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: globalThis.localStorage } });
 afterAll(() => {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else Reflect.deleteProperty(globalThis, "window");
     if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
     else Reflect.deleteProperty(globalThis, "localStorage");
 });
 
-const { defaultConfig, resolveModelForCapability, useConfigStore } = await import("../src/stores/use-config-store");
+const { CONFIG_STORE_KEY, configWithoutTemporaryKeys, defaultConfig, resolveModelForCapability, upsertChannelCredentials, useConfigStore } = await import("../src/stores/use-config-store");
 const { buildGenerationConfig } = await import("../src/lib/canvas/canvas-generation-helpers");
 const { CanvasNodeType } = await import("../src/types/canvas");
 
@@ -96,5 +100,37 @@ test("changing only the key on the same provider preserves the saved model and t
 test("unavailable explicit selections are preserved for every generation capability", () => {
     for (const capability of ["image", "video", "text", "audio"] as ModelCapability[]) {
         expect(resolveModelForCapability(config, `removed::${capability}`, capability)).toBe(`removed::${capability}`);
+    }
+});
+
+test("musketeer links import only the gateway address and preserve an existing manual key", () => {
+    const input = { baseUrl: "https://api.monkeykgai.com/v1/", apiKey: "key-from-url" };
+    const imported = upsertChannelCredentials(config, input);
+    const channel = imported.config.channels[1];
+    expect(channel).toMatchObject({ name: "musketeer", apiKey: "", rememberApiKey: false });
+    const configured = { ...imported.config, channels: [config.channels[0], { ...channel, apiKey: "manual-key", rememberApiKey: true }] };
+    const reopened = upsertChannelCredentials(configured, { ...input, baseUrl: "https://api.monkeykgai.com/" });
+    expect(reopened.config.channels).toHaveLength(2);
+    expect(reopened.config.channels[1]).toMatchObject({ apiKey: "manual-key", rememberApiKey: true });
+});
+
+test("temporary keys remain in memory and are removed from persistence and config export", async () => {
+    const original = useConfigStore.getState().config;
+    const provider = { ...config.channels[0], apiKey: "temporary-key", rememberApiKey: false };
+    const next = { ...config, apiKey: provider.apiKey, channels: [provider, { ...config.channels[0], id: "legacy" }] };
+    try {
+        useConfigStore.setState({ config: next });
+        expect(useConfigStore.getState().config.channels[0].apiKey).toBe("temporary-key");
+        const exported = configWithoutTemporaryKeys(next);
+        expect(exported.apiKey).toBe("");
+        expect(exported.channels.map(({ apiKey }) => apiKey)).toEqual(["", "test-key"]);
+        const stored = JSON.parse(values.get(CONFIG_STORE_KEY)!).state.config as AiConfig;
+        expect(stored.apiKey).toBe("");
+        expect(stored.channels.map(({ apiKey }) => apiKey)).toEqual(["", "test-key"]);
+        useConfigStore.setState({ config: { ...next, channels: [{ ...provider, rememberApiKey: true }] } });
+        await useConfigStore.persist.rehydrate();
+        expect(useConfigStore.getState().config.channels[0].apiKey).toBe("temporary-key");
+    } finally {
+        useConfigStore.setState({ config: original });
     }
 });

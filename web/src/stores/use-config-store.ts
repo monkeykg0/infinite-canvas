@@ -20,6 +20,7 @@ export type ModelChannel = {
     name: string;
     baseUrl: string;
     apiKey: string;
+    rememberApiKey?: boolean;
     apiFormat: ApiCallFormat;
     models: ChannelModel[];
 };
@@ -76,6 +77,7 @@ export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+const MUSKETEER_BASE_URL = "https://api.monkeykgai.com";
 export const LOCAL_PROXY_PACKAGE = "@basketikun/canvas-proxy";
 export const DEFAULT_LOCAL_PROXY_URL = "http://127.0.0.1:23210";
 
@@ -247,7 +249,7 @@ export const useConfigStore = create<ConfigStore>()(
         }),
         {
             name: CONFIG_STORE_KEY,
-            partialize: (state) => ({ config: state.config, webdav: state.webdav }),
+            partialize: (state) => ({ config: configWithoutTemporaryKeys(state.config), webdav: state.webdav }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
@@ -318,9 +320,16 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         name: channel?.name?.trim() || i18n.t("config.channels.newName"),
         baseUrl: channel?.baseUrl?.trim() || defaultBaseUrlForApiFormat(apiFormat),
         apiKey: channel?.apiKey || "",
+        rememberApiKey: channel?.rememberApiKey,
         apiFormat,
         models: normalizeChannelModels(channel?.models),
     };
+}
+
+export function configWithoutTemporaryKeys(config: AiConfig): AiConfig {
+    if (!Array.isArray(config.channels)) return config;
+    const channels = config.channels.map((channel) => (channel.rememberApiKey === false ? { ...channel, apiKey: "" } : channel));
+    return { ...config, channels, apiKey: config.channels[0]?.rememberApiKey === false ? "" : config.apiKey };
 }
 
 export function upsertChannelCredentials(
@@ -332,8 +341,10 @@ export function upsertChannelCredentials(
     if (!isHttpBaseUrl(rawBaseUrl)) return { status: "invalid-base-url", config };
 
     const baseUrl = normalizeImportedBaseUrl(rawBaseUrl);
-    const apiKey = input.apiKey?.trim() || "";
-    const matchingIndex = config.channels.findIndex((channel) => normalizedBaseUrlKey(channel.baseUrl) === normalizedBaseUrlKey(baseUrl));
+    const endpoint = normalizedBaseUrlKey(baseUrl);
+    const isMusketeer = endpoint === MUSKETEER_BASE_URL;
+    const apiKey = isMusketeer ? "" : input.apiKey?.trim() || "";
+    const matchingIndex = config.channels.findIndex((channel) => normalizedBaseUrlKey(channel.baseUrl) === endpoint);
 
     if (matchingIndex >= 0) {
         const existing = config.channels[matchingIndex];
@@ -346,9 +357,10 @@ export function upsertChannelCredentials(
     }
 
     const channel = createModelChannel({
-        name: importedChannelName(baseUrl),
+        name: isMusketeer ? "musketeer" : importedChannelName(baseUrl),
         baseUrl,
         apiKey,
+        rememberApiKey: isMusketeer ? false : undefined,
         apiFormat: "openai",
         models: [],
     });
